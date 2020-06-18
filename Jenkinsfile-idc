@@ -1,0 +1,54 @@
+
+def buildImage(cluster_name, env_name) {
+	openshift.withCluster( cluster_name ) {
+		openshift.withProject( env_name ) {
+			echo "Building Image Stream from $APP_NAME"
+			
+			def result = openshift.selector("bc", "$APP_NAME").startBuild("--follow")
+			echo "Build result: ${result.status}"
+			
+			def dc = openshift.selector('dc', "$APP_NAME")
+			dc.rollout().status()
+		}
+	}
+}
+
+def tagImage(cluster_name, env_name) {
+	openshift.withCluster( cluster_name ) {
+		openshift.withProject( env_name ) {
+			echo "Tag image version."
+			openshift.tag("sandbox/$APP_NAME:latest", "sandbox/$APP_NAME:$APP_VER")
+			def dc = openshift.selector('dc', "$APP_NAME")
+			dc.rollout().status()
+		}
+	}
+}
+
+pipeline{
+	agent any
+	environment{
+		def CLUSTER_NAME = "openshift-4.3" 
+		def ENV_TEST = "sandbox" 
+	}
+	stages{ 
+		stage ("Build") {
+			steps {
+				script {
+				    buildImage(CLUSTER_NAME, ENV_TEST)
+				}
+			}
+		}
+		stage('approval (sandbox)') {
+			steps{
+				input 'Approve for sandbox?'
+			}
+		}
+		stage ("Deploy Sandbox") {
+			steps {
+				script {
+					tagImage(CLUSTER_NAME, ENV_TEST)
+				}
+			}
+		} 
+	}
+}
